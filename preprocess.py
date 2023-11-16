@@ -71,11 +71,11 @@ def save_logmel(save_root, wav_name, melinfo, mode):
     return mel_len, mel_save_path, lf0_save_path
 
 # def get_wavs_names(spks, data_root)
-data_root = '/Dataset/VCTK-Corpus/wav48_silence_trimmed'
+data_root = '/work1/cchen/data/only-audio/VCTK-0.92/wav48_silence_trimmed'
 save_root = 'data'
 os.makedirs(save_root, exist_ok=True)
 
-spk_info_txt = '/Dataset/VCTK-Corpus/speaker-info.txt'
+spk_info_txt = '/work1/cchen/data/only-audio/VCTK-0.92/speaker-info.txt'
 f = open(spk_info_txt, 'r')
 gen2spk = {}
 all_spks = []
