@@ -2,8 +2,8 @@ model:
     encoder:
         in_channels: 80
         channels: 512
-        n_embeddings: 512
-        z_dim: 64
+        n_embeddings: 200
+        z_dim: 160
         c_dim: 256
     cpc:
         n_prediction_steps: ${training.n_prediction_steps}

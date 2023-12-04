@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from src.espnet.nets.pytorch_backend.transformer.encoder import Encoder as Conformer
+from src.espnet.nets.pytorch_backend.nets_utils import make_non_pad_mask
 # import numpy as np
 '''
 reference from: https://github.com/auspicious3000/autovc/blob/master/model_vc.py
@@ -87,6 +89,38 @@ class Postnet(nn.Module):
 
         return x    
     
+class Decoder_conformer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conformer = Conformer(
+            idim=417,
+            attention_dim=384,
+            attention_heads=2,
+            linear_units=1536,
+            num_blocks=4,
+            input_layer='linear',
+            dropout_rate=0.1,
+            positional_dropout_rate=0.1,
+            attention_dropout_rate=0.1,
+            encoder_attn_layer_type='rel_mha',
+            macaron_style=True,
+            use_cnn_module=True,
+            cnn_module_kernel=31,
+            zero_triu=False,
+            a_upsample_ratio=1,
+            relu_type='swish',
+        )
+        self.linear = nn.Linear(in_features=384, out_features=80)
+        
+        
+    def forward(self, x):
+        # import pdb
+        # pdb.set_trace()
+        B, T, C = x.shape
+        x_mask = make_non_pad_mask(lengths=[T for _ in x]).to(x.device).unsqueeze(-2)
+        embedding, _ = self.conformer(x, x_mask)
+        mel_output = self.linear(embedding)
+        return mel_output
     
 
 class Decoder(nn.Module):
@@ -138,12 +172,17 @@ class Decoder_ac(nn.Module):
         super(Decoder_ac, self).__init__()
         self.use_l1_loss = use_l1_loss
         # self.encoder = Encoder(dim_neck, dim_emb, freq)
-        self.decoder = Decoder(dim_neck, dim_lf0, dim_emb, dim_pre)
+        # self.decoder = Decoder(dim_neck, dim_lf0, dim_emb, dim_pre)
+        self.decoder = Decoder_conformer()
         self.postnet = Postnet()
 
     def forward(self, z, lf0_embs, spk_embs, mel_target=None):
-        z = F.interpolate(z.transpose(1, 2), scale_factor=2) # (bs, 140/2, 64) -> (bs, 64, 140/2) -> (bs, 64, 140)
-        z = z.transpose(1, 2) # (bs, 64, 140) -> (bs, 140, 64)
+        # import pdb
+        # pdb.set_trace()
+        # z.shape (B, C, T/2) == (256, 160, T/2)
+        # spk_embs.shape (B, C) == (256, 256)
+        z = F.interpolate(z.transpose(1, 2), scale_factor=2) # (B, T/2, C) -> (B, C, T/2) -> (B, C, T)
+        z = z.transpose(1, 2) # (B, 160=C, T/2) -> (B, T, 160=C)
         spk_embs_exp = spk_embs.unsqueeze(1).expand(-1,z.shape[1],-1)
         lf0_embs = lf0_embs[:,:z.shape[1],:]
         # print(z.shape, lf0_embs.shape)

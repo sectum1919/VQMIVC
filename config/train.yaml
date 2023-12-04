@@ -15,7 +15,7 @@ valid_file: valid
 
 encoder_lf0_type: no_emb
 use_CSMI: True  # use MI between content and speaker
-use_CPMI: True  # use MI between content and pitch
-use_PSMI: True  # use MI between picth and speaker
+use_CPMI: False  # use MI between content and pitch
+use_PSMI: False  # use MI between picth and speaker
 
 use_amp: False # set to True to speed up training

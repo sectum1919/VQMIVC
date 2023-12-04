@@ -163,6 +163,63 @@ class SpeakerEncoder(nn.Module):
         return out
 
 
+class VoiceEncoder(nn.Module):
+    def __init__(self, n_mels, dim=256, num_layer=3, embedding_size=256):
+        super().__init__()
+        # Define the network
+        self.lstm = nn.LSTM(n_mels, dim, num_layer, batch_first=True)
+        self.linear = nn.Linear(dim, embedding_size)
+        self.relu = nn.ReLU()
+        
+    def forward(self, mels: torch.FloatTensor):
+        """
+        Computes the embeddings of a batch of utterance spectrograms.
+
+        :param mels: a batch of mel spectrograms of same duration as a float32 tensor of shape
+        (batch_size, n_frames, n_channels)
+        :return: the embeddings as a float 32 tensor of shape (batch_size, embedding_size).
+        Embeddings are positive and L2-normed, thus they lay in the range [0, 1].
+        """
+        # import pdb
+        # pdb.set_trace()
+        # mels.shape (batch_size, n_channels, n_frames)
+        _, (hidden, _) = self.lstm(mels.permute(0, 2, 1))
+        embeds_raw = self.relu(self.linear(hidden[-1]))
+        return embeds_raw / torch.norm(embeds_raw, dim=1, keepdim=True)
+    
+
+class F0Predictor(nn.Module):
+    def __init__(self, z_dim=160, spk_dim=256, dim=384):
+        super().__init__()
+        self.conv1 = nn.Conv1d(in_channels=z_dim+spk_dim, out_channels=dim, kernel_size=3, padding=1)
+        self.layernorm1 = nn.LayerNorm(normalized_shape=dim)
+        self.conv2 = nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=3, padding=1)
+        self.layernorm2 = nn.LayerNorm(normalized_shape=dim)
+        self.linear = nn.Linear(in_features=384, out_features=1)
+        
+    def forward(self, z, spk_embs, lf0_target=None):
+        # import pdb
+        # pdb.set_trace()
+        # z.shape (B, C, T/2) == (256, 160, T/2)
+        # spk_embs.shape (B, C) == (256, 256)
+        z = F.interpolate(z.transpose(1, 2), scale_factor=2) # (B, T/2, C) -> (B, C, T/2) -> (B, C, T)
+        z = z.transpose(1, 2) # (B, 160=C, T/2) -> (B, T, 160=C)
+        spk_embs_exp = spk_embs.unsqueeze(1).expand(-1,z.shape[1],-1)
+        # print(z.shape, lf0_embs.shape)
+        x = torch.cat([z, spk_embs_exp], dim=-1)
+        x = self.conv1(x.permute(0, 2 ,1)).permute(0, 2, 1)
+        x = F.relu(x)
+        x = self.layernorm1(x)
+        x = self.conv2(x.permute(0, 2 ,1)).permute(0, 2, 1)
+        x = F.relu(x)
+        x = self.layernorm2(x)
+        lf0_predict = self.linear(x).squeeze(-1)
+        if lf0_target is None:
+            return lf0_predict
+        else:
+            loss = F.mse_loss(lf0_predict, lf0_target)
+            return loss, lf0_target
+
 
 class Encoder(nn.Module):
     '''
@@ -199,10 +256,20 @@ class Encoder(nn.Module):
         return z, c, z_beforeVQ, indices
 
     def forward(self, mels):
-        z = self.conv(mels.float()) # (bz, 80, 128) -> (bz, 512, 128/2)
-        z_beforeVQ = self.encoder(z.transpose(1, 2)) # (bz, 512, 128/2) -> (bz, 128/2, 512) -> (bz, 128/2, 64)
-        z, r, loss, perplexity = self.codebook(z_beforeVQ) # z: (bz, 128/2, 64)
-        c, _ = self.rnn(z) # (64, 140/2, 64) -> (64, 140/2, 256)
+        # old version
+        # z = self.conv(mels.float()) # (bz, 80, 128) -> (bz, 512, 128/2)
+        # z_beforeVQ = self.encoder(z.transpose(1, 2)) # (bz, 512, 128/2) -> (bz, 128/2, 512) -> (bz, 128/2, 64)
+        # z, r, loss, perplexity = self.codebook(z_beforeVQ) # z: (bz, 128/2, 64)
+        # c, _ = self.rnn(z) # (64, 140/2, 64) -> (64, 140/2, 256)
+        
+        # import pdb
+        # pdb.set_trace()
+        # mels.shape (B C T)
+        z = self.conv(mels.float()) # (B, 80, T) -> (B, channels, T/2)
+        z_beforeVQ = self.encoder(z.transpose(1, 2)) # (B, channels, T/2) -> (B, T/2, channels) -> (B, T/2, z_dim)
+        z, r, loss, perplexity = self.codebook(z_beforeVQ) # z: (B, T/2, z_dim)
+        c, _ = self.rnn(z) # (B, T/2, z_dim) -> (B, T/2, c_dim)
+        
         return z, c, z_beforeVQ, loss, perplexity
     
 

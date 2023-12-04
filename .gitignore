@@ -1,0 +1,11 @@
+ParallelWaveGAN/build/
+ParallelWaveGAN/dist/
+__pycache__/
+checkpoints/
+ckpt/
+converted/
+data/
+vocoder/checkpoint-3000000steps.pkl
+vocoder/config.yml
+vocoder/stats.h5
+outputs/
